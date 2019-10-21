@@ -4,7 +4,8 @@
  * @brief C++ header-only library implementing a Circular Asynchronous Buffer
  *
  * Circular Asynchronous Buffer (CAB) is a communication mechanism used between
- * periodic tasks, first proposed by Dayton Clark in 1989.
+ * periodic tasks, first proposed by Prof. D. Clark in 1989 (refered to as 
+ * Periodic Data Buffer), later redefined by Prof. G. Buttazzo.
  * 
  * CAB architecture implements a block-free buffer, where reading from it 
  * returns the last value written to it and writing to it never blocks.
