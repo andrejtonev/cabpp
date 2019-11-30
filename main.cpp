@@ -116,9 +116,9 @@ void RunTest(const std::string& name,
     read_time_sum += read_times[i];
     read_loops_sum += read_loops[i];
   }
-  std::cout << "Read: " << read_time_sum/read_loops_sum << "ns (" << read_loops_sum << ")" 
+  std::cout << "Read: " << read_time_sum/read_loops_sum << "ns (" << read_loops_sum << " calls)" 
             << std::endl;
-  std::cout << "Write: " << write_time_sum/write_loops_sum << "ns (" << write_loops_sum << ")" 
+  std::cout << "Write: " << write_time_sum/write_loops_sum << "ns (" << write_loops_sum << " calls)" 
             << std::endl;
 } 
 
@@ -143,7 +143,7 @@ public:
    */
   std::shared_ptr<T> ReadPtr() {
     std::lock_guard<std::mutex> lock(mtx_);
-    //This way we block without context switch
+    //This way we block without a context switch
     for (int i = 0; i < busy_loops_; ++i) {
       asm("nop");
     }
@@ -167,7 +167,7 @@ public:
   
   /**Block and move the object.
    */
-  void Move(T&& in) {
+  void Write(T&& in) {
     std::unique_lock<std::mutex> lock(mtx_);
     t_ = std::move(in);
   }
@@ -255,7 +255,7 @@ int main(int argc, char **argv) {
             << std::endl;
 /************************************String***********************************/
   cabpp::CABpp<std::string> cab_str(9, "100");
-  RunTest("CABpp<string> 3 reader 5 writer...", 
+  RunTest("CABpp<string> 3 readers 5 writers...", 
           [&cab_str](int in)->int{
             cab_str.Write(std::to_string(in));
             return 0;
@@ -270,7 +270,7 @@ int main(int argc, char **argv) {
   std::cout << std::endl;
   
   MutexClass<std::string> mtx_str_0(0, "100");
-  RunTest("MutexClass<string> 3 reader(0 nop) 5 writer...", 
+  RunTest("MutexClass<string> 3 readers(0 nop) 5 writers...", 
           [&mtx_str_0](int in)->int{
             mtx_str_0.Write(std::to_string(in));
             return 0;
@@ -283,7 +283,7 @@ int main(int argc, char **argv) {
           3);
   
   MutexClass<std::string> mtx_str_100(100, "100");
-  RunTest("MutexClass<string> 3 reader(100 nop) 5 writer...", 
+  RunTest("MutexClass<string> 3 readers(100 nop) 5 writers...", 
           [&mtx_str_100](int in)->int{
             mtx_str_100.Write(std::to_string(in));
             return 0;
@@ -296,7 +296,7 @@ int main(int argc, char **argv) {
           3);
   
   MutexClass<std::string> mtx_str_10000(10000, "100");
-  RunTest("MutexClass<string> 3 reader(10000 nop) 5 writer...", 
+  RunTest("MutexClass<string> 3 readers(10000 nop) 5 writers...", 
           [&mtx_str_10000](int in)->int{
             mtx_str_10000.Write(std::to_string(in));
             return 0;
@@ -315,9 +315,9 @@ int main(int argc, char **argv) {
 /*********************************Big vector**********************************/
   constexpr size_t size = 10000000;
   cabpp::CABpp<std::vector<uint8_t>> cab_v(20, size, 0);
-  RunTest("CABpp<vector> 16 reader 3 writer...", 
+  RunTest("CABpp<vector> 16 readers 3 writers...", 
           [&cab_v](int in)->int{
-            cab_v.Move(std::vector<uint8_t>(size, in));
+            cab_v.Write(std::vector<uint8_t>(size, in));
             return 0;
           }, 
           [&cab_v](int)->int{
@@ -330,9 +330,9 @@ int main(int argc, char **argv) {
   std::cout << std::endl;
   
   MutexClass<std::vector<uint8_t>> mtx_v_0(0, size, 0);
-  RunTest("MutexClass<vector> 16 reader(0 nop) 3 writer...", 
+  RunTest("MutexClass<vector> 16 readers(0 nop) 3 writers...", 
           [&mtx_v_0](int in)->int{
-            mtx_v_0.Move(std::vector<uint8_t>(size, in));
+            mtx_v_0.Write(std::vector<uint8_t>(size, in));
             return 0;
           }, 
           [&mtx_v_0](int)->int{
@@ -343,9 +343,9 @@ int main(int argc, char **argv) {
           16);
   
   MutexClass<std::vector<uint8_t>> mtx_v_100(100, size, 0);
-  RunTest("MutexClass<vector> 16 reader(100 nop) 3 writer...", 
+  RunTest("MutexClass<vector> 16 readers(100 nop) 3 writers...", 
           [&mtx_v_100](int in)->int{
-            mtx_v_100.Move(std::vector<uint8_t>(size, in));
+            mtx_v_100.Write(std::vector<uint8_t>(size, in));
             return 0;
           }, 
           [&mtx_v_100](int)->int{
@@ -356,9 +356,9 @@ int main(int argc, char **argv) {
           16);
   
   MutexClass<std::vector<uint8_t>> mtx_v_10000(10000, size, 0);
-  RunTest("MutexClass<vector> 16 reader(10000 nop) 3 writer...", 
+  RunTest("MutexClass<vector> 16 readers(10000 nop) 3 writers...", 
           [&mtx_v_10000](int in)->int{
-            mtx_v_10000.Move(std::vector<uint8_t>(size, in));
+            mtx_v_10000.Write(std::vector<uint8_t>(size, in));
             return 0;
           }, 
           [&mtx_v_10000](int)->int{

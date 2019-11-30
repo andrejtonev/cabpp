@@ -23,15 +23,13 @@
  * are atomic operations that may use spin-locks in their implementations.
  * 
  * TODO:
- *  - Take user allocated memory and create the objects in it
- *  - Take in user constructed objects and handle just the logic
  *  - Improve performance by eliminating wasted time in the free slot search
  *
  * @author Andreja Tonev
  *
- * @version 1.0.0
+ * @version 1.0.1
  *
- * @date 08/10/2019
+ * @date 30/11/2019
  */
 #ifndef _CABPP_H_
 #define _CABPP_H_
@@ -56,28 +54,102 @@ public:
    * passed the "args" arguments at construction.
    * @param pages(in): Number of copies to create;
    *        equal to the maximum number of concurrent readers and  writers + 1
-   * @note: As the Read function returns a shared pointer; the user can keep
-   * "reading" long after the Read function execution. Hence here, the 
+   * @param args(in): Optional inputs to pass to the object's constructor
+   */
+  template<typename... Args>
+  CABpp (unsigned int pages, Args&&... args) : 
+  ptr_flags_(pages, kWriting), handler_type_(OperationType::kFull) {
+    if (!pages) { //Empty cab <=> nullptr
+      read_sp_ = nullptr;
+      return;
+    }
+    ptrs_.reserve(pages);
+    //Create N objects
+    for (int i=0; i<pages; ++i) {
+      try {
+        //Allocate and construct object
+        ptrs_.push_back(new T(std::forward<Args>(args)...));
+      } catch(...) {
+        //Free all allocated objects and throw
+        for (auto& ptr : ptrs_)
+          delete ptr;
+        throw;
+      }
+    }
+    //Update pointer
+    ptr_flags_.front() = kReading;
+    read_sp_ = CreateSharedPtr(ptrs_.front(), 0);
+  }
+  
+  /**
+   * Main constructor using user-allocated memory. Creates a "pages" number of 
+   * objects T in the passed allocated memory. Each object is passed the "args" 
+   * arguments at construction.
+   * @param ptr(in): Pointer to the user-allocated memory
+   * @param mem_size(in/out): Size of the allocated memory. Value is decreased 
+   *        by the memory size used for the CAB objects.
+   * @param pages(in): Number of copies to create;
+   *        equal to the maximum number of concurrent readers and  writers + 1
    * @param args(in): Optional inputs to pass to the object's constructors
    */
   template<typename... Args>
-  CABpp (int pages, Args&&... args) : ptr_flags_(pages, kWriting) {
-    ptrs_.reserve(pages);
-    for (int i=0; i<pages; ++i) {
-      ptrs_.push_back(new T(std::forward<Args>(args)...));
-    }
-    if (pages) {
-      ptr_flags_.front() = kReading;
-      read_sp_ = CreateSharedPtr(ptrs_.front(), 0);
-    } else {
+  CABpp(void* ptr, size_t& mem_size, unsigned int pages, Args&&... args) : 
+  ptr_flags_(pages, kWriting), handler_type_(OperationType::kNoMem) {
+    if (!pages) { //Empty cab <=> nullptr
       read_sp_ = nullptr;
+      return;
     }
+    ptrs_.reserve(pages);
+    //Create N objects
+    for (int i=0; i<pages; ++i) {
+      //Aligns the pointer and decreases the memory size
+      if (std::align(alignof(T), sizeof(T), ptr, mem_size)) {
+        T* aligned = reinterpret_cast<T*>(ptr);
+        //Create new object at the aligned memory
+        try {
+          ptrs_.push_back(new(aligned) T(std::forward<Args>(args)...));
+        } catch(...) {
+          //Free all allocated objects and throw
+          for (auto& ptr : ptrs_)
+            delete ptr;
+          throw;
+        }
+        //Update ptr for the next object
+        ptr = (char*)ptr + sizeof(T);
+        mem_size -= sizeof(T);
+      } else {
+        read_sp_ = nullptr;
+        std::cerr << "Failed while aligning memory" 
+                  << ((mem_size < sizeof(T))?": out of memory":"") << std::endl;
+        return;
+      }
+    }
+    //Update pointer
+    ptr_flags_.front() = kReading;
+    read_sp_ = CreateSharedPtr(ptrs_.front(), 0);
+  }
+  
+  /**
+   * Main constructor using user-constructed objects. Runs only the logic level. 
+   * The objects and memory allocation are handled by the user.
+   * @param obj_ptrs(in): vector of pointers to the user-constructed objects
+   */
+  CABpp(std::vector<T*> obj_ptrs) : handler_type_(OperationType::kNoObj) {
+    if (obj_ptrs.empty()) {
+      read_sp_ = nullptr;
+      return;
+    }
+    ptr_flags_ = std::vector<Flag>(obj_ptrs.size(), kWriting);
+    ptrs_ = obj_ptrs;
+    ptr_flags_.front() = kReading;
+    read_sp_ = CreateSharedPtr(ptrs_.front(), 0);
   }
   
   /**
    * Copy constructor.
    */
-  CABpp(const CABpp& in) : ptr_flags_(in.ptr_flags_) {
+  CABpp(const CABpp& in) : ptr_flags_(in.ptr_flags_), 
+                           handler_type_(in.handler_type_) {
     ptrs_.reserve(in.ptrs_.size());
     //Call copy constructor for each element
     for (auto& ptr : in.ptrs_) {
@@ -100,12 +172,12 @@ public:
    */
   CABpp(CABpp&& in) : ptr_flags_(std::move(in.ptr_flags_)), 
                       ptrs_(std::move(in.ptrs_)), 
-                      read_sp_(std::move(in.read_sp_)) {}
+                      read_sp_(std::move(in.read_sp_)),
+                      handler_type_(std::move(in.handler_type_)) {}
 
   /**
    * Copy assignment operator. 
-   * @note: This will invalidate any existing shared pointers pointing to any 
-   * of the managed objects.
+   * @note: This will delete all objects handled by the CAB being overwritten.
    */
   CABpp& operator=(const CABpp& in) {
     if (&in != this) {
@@ -131,19 +203,19 @@ public:
           ++idx;
         }
       }
+      handler_type_ = in.handler_type_;
     }
     return *this;
   }
   
   /**
    * Move assignment operator. 
-   * @note: This will invalidate any existing shared pointers pointing to any 
-   * of the managed objects.
+   * @note: This will delete all objects handled by the CAB being overwritten.
    */
   CABpp& operator=(CABpp&& in) {
     if (&in != this) {
       //Set shared pointer to null
-      std::atomic_store(&read_sp_, std::shared_ptr<T>(nullptr));
+      std::atomic_store(&read_sp_, std::shared_ptr<const T>(nullptr));
       //Update flags
       ptr_flags_ = std::move(in.ptr_flags_);
       //Destroy all managed objects
@@ -154,23 +226,95 @@ public:
       ptrs_ = std::move(in.ptrs_);
       //Update the shared pointer
       std::atomic_store(&read_sp_, in.read_sp_);
-      std::atomic_store(&in.read_sp_, std::shared_ptr<T>(nullptr));
+      std::atomic_store(&in.read_sp_, std::shared_ptr<const T>(nullptr));
+      handler_type_ = in.handler_type_;
     }
     return *this;
   }
   
   /**
-   * Destructor. Destroys all managed objects.
+   * Destructor.
    */
   ~CABpp() {
-    //Destroy all managed objects
-    for (auto& ptr : ptrs_) {
-      delete ptr;
+    switch (handler_type_) {
+      case OperationType::kFull:
+        for (auto& ptr : ptrs_)
+          delete ptr; //Destroy memory and free allocated memory
+        break;
+      case OperationType::kNoMem:
+        for (auto& ptr : ptrs_)
+          ptr->~T(); //Just call destructors without freeing the memory
+        break;
+      case OperationType::kNoObj:
+        //Nothin to do; no memory allocated nor object created
+        break;
     }
   }
   
+  
+  //Todo: move outside the clasa
+  /*
+  * Public type definition
+  */
   /**
-   * Write function. Copies the input to the first free object. 
+   * Pointer wrapper holding the index used by the CABpp class.
+   */
+  class ObjPtr {
+  public:
+    T* operator->() const {
+      return obj_ptr_;
+    }
+    
+    T& operator*() const {
+      return *obj_ptr_;
+    }
+    
+    operator bool() const {
+      return (obj_ptr_ != nullptr || ptr_idx_ >= 0);
+    }
+    
+  private:
+    explicit ObjPtr(T* ptr, int idx) : obj_ptr_(ptr), ptr_idx_(idx) {}
+    
+    T* obj_ptr_;
+    int ptr_idx_;
+    
+    friend CABpp;
+  };
+
+  /**
+   * Reserve one CAB object. Returns a pointer-like object that points to a 
+   * free CAB slot. By using Reserve, the user can avoid allocating additional
+   * object that get moved or copied into a free CAB slot.
+   * @return ObjPtr; pointer wrapper (behaves like a regular pointer)
+   */
+  ObjPtr Reserve(void) {
+    auto idx = GetFreePtrIdx();
+    if (idx >= ptr_flags_.size()) 
+      return ObjPtr(nullptr, -1);
+    return ObjPtr(ptrs_[idx], idx);
+  }
+  
+  /**
+   * Write function. Update the CAB slot pointed to by the ObjPtr. Releases the slot for
+   * reading.
+   * @param in(in/out): ObjPtr pointing to the CAB object. Gets reset on 
+   *        successful write.
+   * @return bool; false on error
+   */
+  bool Write(ObjPtr& in) {
+    if (!in || in.ptr_idx_ >= ptrs_.size() || in.obj_ptr_ != ptrs_[in.ptr_idx_])
+      return false;
+    //Update read share pointer
+    std::atomic_store(&read_sp_, CreateSharedPtr(in.obj_ptr_, in.ptr_idx_));
+    //Reset ObjPtr
+    in.obj_ptr_ = nullptr;
+    in.ptr_idx_ = -1;
+    return true;
+  }
+  
+  /**
+   * Write function. Copies the input to the first free slot. 
    * @note: Uses operator= to assign the value to the free object.
    * @param in(in): object T to copy over
    * @return bool; false if a free pointer was not found
@@ -178,38 +322,32 @@ public:
    * is an available object. It is on the user to handle spurious failures.
    */
   bool Write(const T& in) {
-    auto idx = GetFreePtrIdx();
-    if (idx >= ptr_flags_.size()) return false;
-    //Update values and the shared ptr
-    auto ptr = ptrs_[idx];
+    auto ptr = Reserve();
+    if (!ptr) return false;
     *ptr = in;
-    std::atomic_store(&read_sp_, CreateSharedPtr(ptr, idx));
-    return true;
+    return Write(ptr);
   }
   
   /**
-   * Move function. Executes move semantic on the first free object.
+   * Write function. Executes move semantic on the first free slot.
    * @param in(in): object T to move
    * @return bool; false if a free pointer was not found
-   * @note: Due to atomic function used, the function can fail even when there
-   * is an available object. It is on the user to handle spurious failures.
    */
-  bool Move(T&& in) {
-    auto idx = GetFreePtrIdx();
-    if (idx >= ptr_flags_.size()) return false;
-    //Update values and the shared ptr
-    auto ptr = ptrs_[idx];
+  bool Write(T&& in) {
+    auto ptr = Reserve();
+    if (!ptr) return false;
     *ptr = std::move(in);
-    std::atomic_store(&read_sp_, CreateSharedPtr(ptr, idx));
-    return true;
+    return Write(ptr);
   }
   
   /**
    * Read function. Atomically passes the shared pointer holding the last
-   * updated object's pointer.
+   * updated CAB slot. 
+   * @note: the CAB slot becomes available again only after the 
+   * shared pointer is released/reset.
    * @return shared pointer of the class' template object
    */
-  std::shared_ptr<T> Read() const {
+  std::shared_ptr<const T> Read() const {
     return std::atomic_load(&read_sp_);
   }
   
@@ -236,14 +374,14 @@ private:
    * @param idx(in): pointer's index in the vector @ref ptrs_
    * @return shared pointer of the class' template object
    */
-  std::shared_ptr<T> CreateSharedPtr(T* ptr, int idx) {
+  std::shared_ptr<const T> CreateSharedPtr(T* ptr, int idx) {
     using namespace std::placeholders;
-    return std::shared_ptr<T>(ptr, 
+    return std::shared_ptr<const T>(ptr, 
                               std::bind(&CABpp<T>::DeleteSP, this, _1, idx));
   }
   
   /**
-   * Helper function that finds the first "writable", saves it and switches its
+   * Helper function that finds the first "writable" slot, saves it and switches its
    * status to "readable".
    * @return int; index of the pointer 
    * @note: equal to the vector's size of error
@@ -253,7 +391,7 @@ private:
     int idx = 0;
     for (auto& ptr_flag : ptr_flags_) {
       bool write_b = kWriting;
-      if (ptr_flag.flag.compare_exchange_weak(write_b, kReading)) {
+      if (ptr_flag.flag.compare_exchange_strong(write_b, kReading)) {
         break;
       }
       ++idx;
@@ -267,9 +405,10 @@ private:
   /**
    * Atomic flag (atomic_bool) wrapper.
    * Implements the necessary functions that allow the use of an atomic_bool
-   * inside a vector and allows copy/move semantics of the parent class.
+   * inside a vector and allows for copy/move semantics.
    */
-  struct Flag {
+  class Flag {
+  public:
     Flag() {
       flag = false;
     }
@@ -306,12 +445,24 @@ private:
     std::atomic_bool flag;
   };
 
+  /**
+   * CAB operation type enumeration. Defines 3 types of object handling.
+   * The CAB can allocate and construct all object; construct objects on 
+   * user-allocated memory; or use user-constructed objects (leaving just the logic level running).
+   */
+  enum class OperationType {
+    kFull = 0, //!< Handle both memory allocation and object construction
+    kNoMem,    //!< Handles only object construction on user-allocated memory
+    kNoObj,    //!< Only logic level is active; both memory and objects are handled by the user
+  };
+  
   /*
   * Private variables
   */
   std::vector<Flag> ptr_flags_; //!< Read/Write flags vector (access type definition)
-  std::vector<T*> ptrs_;        //!< Object pointer vector
-  std::shared_ptr<T> read_sp_;  //!< Class' shared pointer passed on reading (atomic operations)
+  std::vector<T*> ptrs_; //!< Object pointer vector
+  std::shared_ptr<const T> read_sp_; //!< Class' shared pointer passed on reading (atomic operations)
+  OperationType handler_type_; //!< Operation mode type flag
 };
 
 } //namespace cabpp

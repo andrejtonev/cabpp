@@ -17,6 +17,47 @@ TEST(CABpp, Allocate) {
   EXPECT_EQ(*cabpp_5.Read(), "22");
 }
 
+/** Test the constructor on user-allocated memory with various data types.
+ */
+TEST(CABpp, UserMem) {
+  size_t mem_size = 300;
+  auto mem_ = malloc(mem_size);
+  void* mem = (char*)mem_ + 1;
+  --mem_size;
+  {
+    EXPECT_TRUE(mem);
+    size_t size_res = mem_size - 3*sizeof(int);
+    cabpp::CABpp<int> cabpp_3(mem, mem_size, 3, 11);
+    EXPECT_LE(mem_size, size_res);
+    EXPECT_EQ(*cabpp_3.Read(), 11);
+    size_res = mem_size - 5*sizeof(std::string);
+    cabpp::CABpp<std::string> cabpp_5((char*)mem + (300 - mem_size), mem_size, 5, "22");
+    EXPECT_LE(mem_size, size_res);
+    EXPECT_EQ(*cabpp_5.Read(), "22");
+  }
+  free(mem_);
+}
+
+/** Test the constructor on user-constructed objects with various data types.
+ */
+TEST(CABpp, UserObj) {
+  int i1 = 1;
+  int i2 = 2;
+  int i3 = 3;
+  std::vector<int*> pi = {&i1, &i2, &i3};
+  std::string s1 = "1";
+  std::string s2 = "2";
+  std::string s3 = "3";
+  std::string s4 = "4";
+  std::string s5 = "5";
+  std::vector<std::string*> ps = {&s1, &s2, &s3, &s4, &s5};
+  
+  cabpp::CABpp<int> cabpp_3(pi);
+  EXPECT_EQ((*cabpp_3.Read()), 1);
+  cabpp::CABpp<std::string> cabpp_5(ps);
+  EXPECT_EQ((*cabpp_5.Read()), "1");
+}
+
 /** Test copy constructor and class copy operator.
  */
 TEST(CABpp, Copy) {
@@ -32,9 +73,41 @@ TEST(CABpp, Copy) {
   EXPECT_EQ((*cabpp_3.Read())[30], 15);
 }
 
+/** Cause a write failure by having too many concurrent readers.
+ *  Here the readers save the shared pointer which exhausts the buffer.
+ */
+TEST(CABpp, Reserve) {
+  struct test {
+    int i;
+    char c;
+  };
+  //Reserve and write
+  cabpp::CABpp<test> cabpp_3(3, test({11, 'a'}));
+  auto ptr1 = cabpp_3.Reserve();
+  EXPECT_TRUE(ptr1);
+  //Obj update
+  (*ptr1).i = 20;
+  ptr1->c = 't';
+  EXPECT_TRUE(cabpp_3.Write(ptr1));
+  EXPECT_FALSE(ptr1);
+  EXPECT_EQ(cabpp_3.Read()->i, 20);
+  EXPECT_EQ(cabpp_3.Read()->c, 't');
+  //Over-reserve causes a failure
+  ptr1 = cabpp_3.Reserve();
+  EXPECT_TRUE(ptr1);
+  auto ptr2 = cabpp_3.Reserve();
+  EXPECT_TRUE(ptr2);
+  auto ptr3 = cabpp_3.Reserve();
+  EXPECT_FALSE(ptr3);
+  auto ptr4 = cabpp_3.Reserve();
+  EXPECT_FALSE(ptr4);
+  auto ptr5 = cabpp_3.Reserve();
+  EXPECT_FALSE(ptr5);
+}
+
 /** Test move constructor and class move operator.
  */
-TEST(CABpp, Move) {
+TEST(CABpp, Write) {
   cabpp::CABpp<std::vector<uint8_t>> cabpp_3(3, 100, 16);
   EXPECT_EQ((*cabpp_3.Read())[0], 16);
   auto move_cabpp(std::move(cabpp_3)); //Class move constructor
@@ -69,13 +142,13 @@ TEST(CABpp, SingleWR) {
 
 /** Test single threaded read/move functions.
  */
-TEST(CABpp, ReadMove) {
+TEST(CABpp, ReadWrite) {
   cabpp::CABpp<std::vector<int>> cabpp_3(3, 3, 11);
   EXPECT_EQ((*cabpp_3.Read())[0], 11);
-  EXPECT_TRUE(cabpp_3.Move({1, 2, 3}));
+  EXPECT_TRUE(cabpp_3.Write({1, 2, 3}));
   EXPECT_EQ((*cabpp_3.Read())[0], 1);
   std::vector<int> input(100, 13);
-  EXPECT_TRUE(cabpp_3.Move(std::move(input)));
+  EXPECT_TRUE(cabpp_3.Write(std::move(input)));
   EXPECT_EQ((*cabpp_3.Read())[20], 13);
   EXPECT_EQ(input.size(), 0);
 }
