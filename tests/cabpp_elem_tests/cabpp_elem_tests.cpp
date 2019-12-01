@@ -1,4 +1,5 @@
-/** Group of GTests used to verify the CABpp implementation.
+/**
+ * Group of GTests used to verify the CABpp implementation.
  */
 #include "gtest/gtest.h"
 #include "cabpp.h"
@@ -36,6 +37,13 @@ TEST(CABpp, UserMem) {
     EXPECT_EQ(*cabpp_5.Read(), "22");
   }
   free(mem_);
+  
+  //Check for failure
+  mem_size = 10;
+  mem = malloc(mem_size);
+  cabpp::CABpp<int> cabpp_fail(mem, mem_size, 11); //11xint will fail on 10B memory
+  EXPECT_EQ(cabpp_fail.Read(), nullptr);
+  free(mem);
 }
 
 /** Test the constructor on user-constructed objects with various data types.

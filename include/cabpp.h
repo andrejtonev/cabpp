@@ -27,9 +27,9 @@
  *
  * @author Andreja Tonev
  *
- * @version 1.0.1
+ * @version 1.0.2
  *
- * @date 30/11/2019
+ * @date 01/12/2019
  */
 #ifndef _CABPP_H_
 #define _CABPP_H_
@@ -41,31 +41,37 @@
 #include <iostream>
 
 namespace cabpp {
-/***********************************Constants*********************************/
+/**********************************Constants***********************************/
 constexpr bool kReading = 1;
 constexpr bool kWriting = 0;
 
-/*****************************CABpp implementation****************************/
+/*****************************Forward declarations*****************************/
+template<typename T>
+class ObjPtr; //Raw pointer wrapper used by the CABpp class.
+
+/*****************************CABpp implementation*****************************/
 template<typename T>
 class CABpp {
 public:
   /**
-   * Main constructor. Creates a "pages" number of objects T. Each object is
+   * Main constructor. Creates a "slots" number of objects T. Each object is
    * passed the "args" arguments at construction.
-   * @param pages(in): Number of copies to create;
+   * @param slots(in): Number of copies to create;
    *        equal to the maximum number of concurrent readers and  writers + 1
    * @param args(in): Optional inputs to pass to the object's constructor
+   * @exceptions - Can throw any exception thrown by the T object's constructor 
+   *               or by allocating memory via new.
    */
   template<typename... Args>
-  CABpp (unsigned int pages, Args&&... args) : 
-  ptr_flags_(pages, kWriting), handler_type_(OperationType::kFull) {
-    if (!pages) { //Empty cab <=> nullptr
+  CABpp (unsigned int slots, Args&&... args) : 
+  ptr_flags_(slots, kWriting), handler_type_(OperationType::kFull) {
+    if (!slots) { //Empty cab <=> nullptr
       read_sp_ = nullptr;
       return;
     }
-    ptrs_.reserve(pages);
+    ptrs_.reserve(slots);
     //Create N objects
-    for (int i=0; i<pages; ++i) {
+    for (int i=0; i<slots; ++i) {
       try {
         //Allocate and construct object
         ptrs_.push_back(new T(std::forward<Args>(args)...));
@@ -82,26 +88,31 @@ public:
   }
   
   /**
-   * Main constructor using user-allocated memory. Creates a "pages" number of 
+   * Main constructor using user-allocated memory. Creates a "slots" number of 
    * objects T in the passed allocated memory. Each object is passed the "args" 
    * arguments at construction.
    * @param ptr(in): Pointer to the user-allocated memory
    * @param mem_size(in/out): Size of the allocated memory. Value is decreased 
    *        by the memory size used for the CAB objects.
-   * @param pages(in): Number of copies to create;
+   * @param slots(in): Number of copies to create;
    *        equal to the maximum number of concurrent readers and  writers + 1
    * @param args(in): Optional inputs to pass to the object's constructors
+   * @note: CAB will default to nullptr in case the allocated memory was not
+   *        sufficiently large (no exceptions thrown). 
+   *        Check: cab.Read() != nullptr
+   * @exceptions - Can throw any exception thrown by the T object's constructor 
+   *               or by allocating memory via new.
    */
   template<typename... Args>
-  CABpp(void* ptr, size_t& mem_size, unsigned int pages, Args&&... args) : 
-  ptr_flags_(pages, kWriting), handler_type_(OperationType::kNoMem) {
-    if (!pages) { //Empty cab <=> nullptr
+  CABpp(void* ptr, size_t& mem_size, unsigned int slots, Args&&... args) : 
+  ptr_flags_(slots, kWriting), handler_type_(OperationType::kNoMem) {
+    if (!slots) { //Empty cab <=> nullptr
       read_sp_ = nullptr;
       return;
     }
-    ptrs_.reserve(pages);
+    ptrs_.reserve(slots);
     //Create N objects
-    for (int i=0; i<pages; ++i) {
+    for (int i=0; i<slots; ++i) {
       //Aligns the pointer and decreases the memory size
       if (std::align(alignof(T), sizeof(T), ptr, mem_size)) {
         T* aligned = reinterpret_cast<T*>(ptr);
@@ -233,7 +244,11 @@ public:
   }
   
   /**
-   * Destructor.
+   * Destructor. Destroys the T objects only in cases where the objects were
+   * created by the CAB. If the user passed pre-allocated memory, that memory
+   * is NOT freed, only the object's destructor is called.
+   * In case the CAB is operating on user-constructed objects, the CAB's 
+   * destructor does not modify the T objects in any way.
    */
   ~CABpp() {
     switch (handler_type_) {
@@ -243,44 +258,13 @@ public:
         break;
       case OperationType::kNoMem:
         for (auto& ptr : ptrs_)
-          ptr->~T(); //Just call destructors without freeing the memory
+          ptr->~T(); //Call destructors without freeing the memory
         break;
       case OperationType::kNoObj:
-        //Nothin to do; no memory allocated nor object created
+        //Nothing to do; no memory allocated nor object created
         break;
     }
   }
-  
-  
-  //Todo: move outside the clasa
-  /*
-  * Public type definition
-  */
-  /**
-   * Pointer wrapper holding the index used by the CABpp class.
-   */
-  class ObjPtr {
-  public:
-    T* operator->() const {
-      return obj_ptr_;
-    }
-    
-    T& operator*() const {
-      return *obj_ptr_;
-    }
-    
-    operator bool() const {
-      return (obj_ptr_ != nullptr || ptr_idx_ >= 0);
-    }
-    
-  private:
-    explicit ObjPtr(T* ptr, int idx) : obj_ptr_(ptr), ptr_idx_(idx) {}
-    
-    T* obj_ptr_;
-    int ptr_idx_;
-    
-    friend CABpp;
-  };
 
   /**
    * Reserve one CAB object. Returns a pointer-like object that points to a 
@@ -288,38 +272,39 @@ public:
    * object that get moved or copied into a free CAB slot.
    * @return ObjPtr; pointer wrapper (behaves like a regular pointer)
    */
-  ObjPtr Reserve(void) {
+  ObjPtr<T> Reserve(void) {
     auto idx = GetFreePtrIdx();
     if (idx >= ptr_flags_.size()) 
-      return ObjPtr(nullptr, -1);
-    return ObjPtr(ptrs_[idx], idx);
+      return ObjPtr<T>(nullptr, -1);
+    return ObjPtr<T>(ptrs_[idx], idx);
   }
   
   /**
-   * Write function. Update the CAB slot pointed to by the ObjPtr. Releases the slot for
-   * reading.
-   * @param in(in/out): ObjPtr pointing to the CAB object. Gets reset on 
-   *        successful write.
+   * Write function. Update the CAB slot pointed to by the ObjPtr. Releases the 
+   * slot for reading.
+   * @param obj_ptr(in/out): ObjPtr pointing to the CAB T object. Gets reset on 
+   *                         successful write.
    * @return bool; false on error
    */
-  bool Write(ObjPtr& in) {
-    if (!in || in.ptr_idx_ >= ptrs_.size() || in.obj_ptr_ != ptrs_[in.ptr_idx_])
+  bool Write(ObjPtr<T>& obj_ptr) {
+    if (!obj_ptr || 
+        obj_ptr.ptr_idx_ >= ptrs_.size() || 
+        obj_ptr.obj_ptr_ != ptrs_[obj_ptr.ptr_idx_])
       return false;
     //Update read share pointer
-    std::atomic_store(&read_sp_, CreateSharedPtr(in.obj_ptr_, in.ptr_idx_));
+    std::atomic_store(&read_sp_, CreateSharedPtr(obj_ptr.obj_ptr_, 
+                                                 obj_ptr.ptr_idx_));
     //Reset ObjPtr
-    in.obj_ptr_ = nullptr;
-    in.ptr_idx_ = -1;
+    obj_ptr.obj_ptr_ = nullptr;
+    obj_ptr.ptr_idx_ = -1;
     return true;
   }
   
   /**
    * Write function. Copies the input to the first free slot. 
-   * @note: Uses operator= to assign the value to the free object.
    * @param in(in): object T to copy over
+   * @note: Uses operator= to assign the value to the free object.
    * @return bool; false if a free pointer was not found
-   * @note: Due to atomic function used, the function can fail even when there
-   * is an available object. It is on the user to handle spurious failures.
    */
   bool Write(const T& in) {
     auto ptr = Reserve();
@@ -341,11 +326,11 @@ public:
   }
   
   /**
-   * Read function. Atomically passes the shared pointer holding the last
+   * Read function. Atomically passes the shared pointer pointing to the last
    * updated CAB slot. 
    * @note: the CAB slot becomes available again only after the 
-   * shared pointer is released/reset.
-   * @return shared pointer of the class' template object
+   * shared pointer is destroyed/reset.
+   * @return shared pointer to a constant T object (CAB slot)
    */
   std::shared_ptr<const T> Read() const {
     return std::atomic_load(&read_sp_);
@@ -368,7 +353,7 @@ private:
   }
 
   /**
-   * Helper function that creates a shared pointer from an object's raw 
+   * Helper function that creates a shared pointer from the object's raw 
    * pointer.
    * @param ptr(in): raw object pointer to make into a shared pointer
    * @param idx(in): pointer's index in the vector @ref ptrs_
@@ -377,7 +362,10 @@ private:
   std::shared_ptr<const T> CreateSharedPtr(T* ptr, int idx) {
     using namespace std::placeholders;
     return std::shared_ptr<const T>(ptr, 
-                              std::bind(&CABpp<T>::DeleteSP, this, _1, idx));
+                                    std::bind(&CABpp<T>::DeleteSP, 
+                                              this, 
+                                              _1, 
+                                              idx));
   }
   
   /**
@@ -400,8 +388,8 @@ private:
   }
   
   /*
-  * Private type definitions
-  */
+   * Private type definitions
+   */
   /**
    * Atomic flag (atomic_bool) wrapper.
    * Implements the necessary functions that allow the use of an atomic_bool
@@ -453,16 +441,44 @@ private:
   enum class OperationType {
     kFull = 0, //!< Handle both memory allocation and object construction
     kNoMem,    //!< Handles only object construction on user-allocated memory
-    kNoObj,    //!< Only logic level is active; both memory and objects are handled by the user
+    kNoObj,    //!< Both memory and objects are handled by the user
   };
   
   /*
-  * Private variables
-  */
+   * Private variables
+   */
   std::vector<Flag> ptr_flags_; //!< Read/Write flags vector (access type definition)
   std::vector<T*> ptrs_; //!< Object pointer vector
   std::shared_ptr<const T> read_sp_; //!< Class' shared pointer passed on reading (atomic operations)
   OperationType handler_type_; //!< Operation mode type flag
+};
+
+/**
+ * Raw pointer wrapper holding the index used by the CABpp class.
+ * Constructible only by the corresponding CABpp class.
+ */
+template<typename T>
+class ObjPtr {
+public:
+  T* operator->() const {
+    return obj_ptr_;
+  }
+  
+  T& operator*() const {
+    return *obj_ptr_;
+  }
+  
+  operator bool() const {
+    return (obj_ptr_ != nullptr || ptr_idx_ >= 0);
+  }
+  
+private:
+  explicit ObjPtr(T* ptr, int idx) : obj_ptr_(ptr), ptr_idx_(idx) {}
+  
+  T* obj_ptr_;
+  int ptr_idx_;
+  
+  friend CABpp<T>;
 };
 
 } //namespace cabpp
