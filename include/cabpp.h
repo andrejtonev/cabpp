@@ -24,6 +24,7 @@
  * 
  * TODO:
  *  - Improve performance by eliminating wasted time in the free slot search
+ *  - Add a notification system
  *
  * @author Andreja Tonev
  *
