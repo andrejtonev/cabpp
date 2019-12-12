@@ -27,9 +27,9 @@
  *
  * @author Andreja Tonev
  *
- * @version 1.0.2
+ * @version 1.0.3
  *
- * @date 01/12/2019
+ * @date 12/12/2019
  */
 #ifndef _CABPP_H_
 #define _CABPP_H_
@@ -42,8 +42,8 @@
 
 namespace cabpp {
 /**********************************Constants***********************************/
-constexpr bool kReading = 1;
-constexpr bool kWriting = 0;
+constexpr bool kBusy = 1;
+constexpr bool kFree = 0;
 
 /*****************************Forward declarations*****************************/
 template<typename T>
@@ -64,7 +64,7 @@ public:
    */
   template<typename... Args>
   CABpp (unsigned int slots, Args&&... args) : 
-  ptr_flags_(slots, kWriting), handler_type_(OperationType::kFull) {
+  ptr_flags_(slots, kFree), handler_type_(OperationType::kFull) {
     if (!slots) { //Empty cab <=> nullptr
       read_sp_ = nullptr;
       return;
@@ -83,7 +83,7 @@ public:
       }
     }
     //Update pointer
-    ptr_flags_.front() = kReading;
+    ptr_flags_.front() = kBusy;
     read_sp_ = CreateSharedPtr(ptrs_.front(), 0);
   }
   
@@ -105,7 +105,7 @@ public:
    */
   template<typename... Args>
   CABpp(void* ptr, size_t& mem_size, unsigned int slots, Args&&... args) : 
-  ptr_flags_(slots, kWriting), handler_type_(OperationType::kNoMem) {
+  ptr_flags_(slots, kFree), handler_type_(OperationType::kNoMem) {
     if (!slots) { //Empty cab <=> nullptr
       read_sp_ = nullptr;
       return;
@@ -136,7 +136,7 @@ public:
       }
     }
     //Update pointer
-    ptr_flags_.front() = kReading;
+    ptr_flags_.front() = kBusy;
     read_sp_ = CreateSharedPtr(ptrs_.front(), 0);
   }
   
@@ -150,9 +150,9 @@ public:
       read_sp_ = nullptr;
       return;
     }
-    ptr_flags_ = std::vector<Flag>(obj_ptrs.size(), kWriting);
+    ptr_flags_ = std::vector<Flag>(obj_ptrs.size(), kFree);
     ptrs_ = obj_ptrs;
-    ptr_flags_.front() = kReading;
+    ptr_flags_.front() = kBusy;
     read_sp_ = CreateSharedPtr(ptrs_.front(), 0);
   }
   
@@ -169,7 +169,7 @@ public:
     //Update the shared pointer to the same index as the passed class'
     int idx = 0;
     for (auto& flag : ptr_flags_) {
-      if (flag == kReading) {
+      if (flag == kBusy) {
         read_sp_ = CreateSharedPtr(ptrs_[idx], idx);
         break;
       } else {
@@ -207,7 +207,7 @@ public:
       //Update the shared pointer to the same index as the passed class'
       int idx = 0;
       for (auto& flag : ptr_flags_) {
-        if (flag == kReading) {
+        if (flag == kBusy) {
           std::atomic_store(&read_sp_, CreateSharedPtr(ptrs_[idx], idx));
           break;
         } else {
@@ -349,7 +349,7 @@ private:
       std::cerr << "Failed to set the pointer (idx " << idx 
                 << ") to writable" << std::endl;
     else
-      ptr_flags_[idx] = kWriting;
+      ptr_flags_[idx] = kFree;
   }
 
   /**
@@ -378,8 +378,8 @@ private:
     //Find a pointer that is available for writing
     int idx = 0;
     for (auto& ptr_flag : ptr_flags_) {
-      bool write_b = kWriting;
-      if (ptr_flag.flag.compare_exchange_strong(write_b, kReading)) {
+      bool write_b = kFree;
+      if (ptr_flag.flag.compare_exchange_strong(write_b, kBusy)) {
         break;
       }
       ++idx;
