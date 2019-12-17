@@ -82,11 +82,13 @@ find_package (CABpp)
 target_link_libraries(*** cabpp)
 ```
 
+### Sources
+[1] Clark, D.: “HIC: An Operating System for Hierarchies of Servo Loops”, Proc. of IEEE Int. Conf. on Rob. and Autom., pp. 1004-1009,1989.
+
+
+[2] Buttazzo, G.C.: "HARTIK: a real-time kernel for robotics applications", Proc. of IEEE Real_Time Systems Symposium, pp. 201–205,1993.
+
 
 
 #
 *Special thanks to Prof. G. Buttazzo, Gabriele Serra and Gabriele Ara for their helpful remarks.* 
-
-# Sources
-[1] Clark, D.: “HIC: An Operating System for Hierarchies of Servo Loops”, Proc. of IEEE Int. Conf. on Rob. and Autom., pp. 1004-1009,1989.
-[2] Buttazzo, G.C.: "HARTIK: a real-time kernel for robotics applications", Proc. of IEEE Real_Time Systems Symposium, pp. 201–205,1993.

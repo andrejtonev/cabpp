@@ -66,19 +66,20 @@ TEST(CABpp, UserObj) {
   EXPECT_EQ((*cabpp_5.Read()), "1");
 }
 
-/** Test copy constructor and class copy operator.
+/** Test move constructor and class move operator.
  */
-TEST(CABpp, Copy) {
+TEST(CABpp, Move) {
   cabpp::CABpp<std::vector<uint8_t>> cabpp_3(3, 100, 15);
   EXPECT_EQ((*cabpp_3.Read())[0], 15);
-  auto copy_cabpp = cabpp_3; //Class copy constructor
-  auto ptr = copy_cabpp.Read();
-  EXPECT_EQ((*copy_cabpp.Read())[10], 15);
-  EXPECT_EQ((*cabpp_3.Read())[20], 15);
+  auto move_cabpp = std::move(cabpp_3); //Class move constructor
+  auto ptr = move_cabpp.Read();
+  EXPECT_EQ((*move_cabpp.Read())[10], 15);
+  EXPECT_TRUE(cabpp_3.Read() == nullptr);
   decltype(cabpp_3) cabpp_0(0);
   EXPECT_FALSE(cabpp_0.Write(*ptr));
-  cabpp_0 = cabpp_3; //Class copy
-  EXPECT_EQ((*cabpp_3.Read())[30], 15);
+  cabpp_0 = std::move(move_cabpp); //Class move assignment
+  EXPECT_EQ((*cabpp_0.Read())[30], 15);
+  EXPECT_TRUE(move_cabpp.Read() == nullptr);
 }
 
 /** Cause a write failure by having too many concurrent readers.

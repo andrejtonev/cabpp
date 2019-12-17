@@ -150,41 +150,25 @@ public:
    * The objects and memory allocation are handled by the user.
    * @param obj_ptrs: vector of pointers to the user-constructed objects
    */
-  CABpp(std::vector<T*> obj_ptrs) : handler_type_(OperationType::kNoObj) {
-    if (obj_ptrs.empty()) {
+  CABpp(const std::vector<T*>& obj_ptrs) : 
+  ptrs_(obj_ptrs), handler_type_(OperationType::kNoObj) {
+    if (ptrs_.empty()) {
       read_sp_ = nullptr;
       return;
     }
-    ptr_flags_ = std::vector<Flag>(obj_ptrs.size(), kFree);
-    ptrs_ = obj_ptrs;
+    ptr_flags_ = std::vector<Flag>(ptrs_.size(), kFree);
     ptr_flags_.front() = kBusy;
     read_sp_ = CreateSharedPtr(ptrs_.front(), 0);
   }
   
   /**
-   * Copy constructor.
+   * Copy constructor disabled.
    */
-  CABpp(const CABpp& in) : ptr_flags_(in.ptr_flags_), 
-                           handler_type_(in.handler_type_) {
-    ptrs_.reserve(in.ptrs_.size());
-    //Call copy constructor for each element
-    for (auto& ptr : in.ptrs_) {
-      ptrs_.push_back(new T{*(ptr)});
-    }
-    //Update the shared pointer to the same index as the passed class'
-    int idx = 0;
-    for (auto& flag : ptr_flags_) {
-      if (flag == kBusy) {
-        read_sp_ = CreateSharedPtr(ptrs_[idx], idx);
-        break;
-      } else {
-        ++idx;
-      }
-    }
-  }
+  CABpp(const CABpp& in) = delete;
   
   /**
    * Move constructor.
+   * @note: This will delete all objects handled by the CAB being overwritten.
    */
   CABpp(CABpp&& in) : ptr_flags_(std::move(in.ptr_flags_)), 
                       ptrs_(std::move(in.ptrs_)), 
@@ -192,37 +176,9 @@ public:
                       handler_type_(std::move(in.handler_type_)) {}
 
   /**
-   * Copy assignment operator. 
-   * @note: This will delete all objects handled by the CAB being overwritten.
+   * Copy assignment operator disabled.
    */
-  CABpp& operator=(const CABpp& in) {
-    if (&in != this) {
-      //Update pointer flags
-      ptr_flags_ = in.ptr_flags_;
-      //Destroy all managed objects
-      for (auto& ptr : ptrs_) {
-        delete ptr;
-      }
-      ptrs_.clear();
-      ptrs_.reserve(in.ptrs_.size());
-      //Call copy constructor for each element
-      for (auto& ptr : in.ptrs_) {
-        ptrs_.push_back(new T{*(ptr)});
-      }
-      //Update the shared pointer to the same index as the passed class'
-      int idx = 0;
-      for (auto& flag : ptr_flags_) {
-        if (flag == kBusy) {
-          std::atomic_store(&read_sp_, CreateSharedPtr(ptrs_[idx], idx));
-          break;
-        } else {
-          ++idx;
-        }
-      }
-      handler_type_ = in.handler_type_;
-    }
-    return *this;
-  }
+  CABpp& operator=(const CABpp& in) = delete;
   
   /**
    * Move assignment operator. 
@@ -249,11 +205,7 @@ public:
   }
   
   /**
-   * Destructor. Destroys the T objects only in cases where the objects were
-   * created by the CAB. If the user passed pre-allocated memory, that memory
-   * is NOT freed, only the object's destructor is called.
-   * In case the CAB is operating on user-constructed objects, the CAB's 
-   * destructor does not modify the T objects in any way.
+   * Destroy objects and/or free memory depending on the initialization mode.
    */
   ~CABpp() {
     switch (handler_type_) {
@@ -285,8 +237,7 @@ public:
   }
   
   /**
-   * Write function. Update the CAB slot pointed to by the ObjPtr. Releases the 
-   * slot for reading.
+   * Update the CAB slot pointed to by the ObjPtr (sets it to reading mode).
    * @param obj_ptr(in/out): ObjPtr pointing to the CAB T object. Gets reset on 
    *                         successful write.
    * @return bool; false on error
@@ -306,7 +257,7 @@ public:
   }
   
   /**
-   * Write function. Copies the input to the first free slot. 
+   * Copies the input to the first free slot (sets it to reading mode).
    * @param in: object T to copy over
    * @note: Uses operator= to assign the value to the free object.
    * @return bool; false if a free pointer was not found
@@ -319,7 +270,7 @@ public:
   }
   
   /**
-   * Write function. Executes move semantic on the first free slot.
+   * Executes move semantic on the first free slot (sets it to reading mode).
    * @param in: object T to move
    * @return bool; false if a free pointer was not found
    */
@@ -331,8 +282,7 @@ public:
   }
   
   /**
-   * Read function. Atomically passes the shared pointer pointing to the last
-   * updated CAB slot. 
+   * Atomically passes the shared pointer pointing to the last updated CAB slot. 
    * @note: the CAB slot becomes available again only after the 
    * shared pointer is destroyed/reset.
    * @return shared pointer to a constant T object (CAB slot)
