@@ -6,9 +6,6 @@
  *
  * @author Andreja Tonev
  *
- * @version 1.0.0
- *
- * @date 08/10/2019
  */
 #include "cabpp.h"
 

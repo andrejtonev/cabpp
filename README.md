@@ -2,9 +2,9 @@
 C++ header-only library implementing a Cyclic Asynchronous Buffer (CAB).
 
 ### Cyclic Asynchronous Buffer
-Circular Asynchronous Buffer (CAB) is a communication mechanism used between
-periodic tasks, first proposed by Prof. D. Clark in 1989 (referred to as 
-Periodic Data Buffer), later redefined by Prof. G. Buttazzo.
+Cyclic Asynchronous Buffer (CAB) is a communication mechanism used between
+periodic tasks, first proposed by Prof. D. Clark[1](#sources) (referred to as 
+Periodic Data Buffer), later redefined by Prof. G. Buttazzo[2](#sources).
  
 CAB architecture implements a block-free buffer, where reading from it 
 returns the last value written to it and writing to it never blocks.
@@ -86,3 +86,7 @@ target_link_libraries(*** cabpp)
 
 #
 *Special thanks to Prof. G. Buttazzo, Gabriele Serra and Gabriele Ara for their helpful remarks.* 
+
+# Sources
+[1] Clark, D.: “HIC: An Operating System for Hierarchies of Servo Loops”, Proc. of IEEE Int. Conf. on Rob. and Autom., pp. 1004-1009,1989.
+[2] Buttazzo, G.C.: "HARTIK: a real-time kernel for robotics applications", Proc. of IEEE Real_Time Systems Symposium, pp. 201–205,1993.

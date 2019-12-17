@@ -3,7 +3,7 @@
  * 
  * @brief C++ header-only library implementing a Circular Asynchronous Buffer
  *
- * Circular Asynchronous Buffer (CAB) is a communication mechanism used between
+ * Cyclic Asynchronous Buffer (CAB) is a communication mechanism used between
  * periodic tasks, first proposed by Prof. D. Clark in 1989 (refered to as 
  * Periodic Data Buffer), later redefined by Prof. G. Buttazzo.
  * 
@@ -27,10 +27,6 @@
  *  - Add a notification system
  *
  * @author Andreja Tonev
- *
- * @version 1.0.3
- *
- * @date 12/12/2019
  */
 #ifndef _CABPP_H_
 #define _CABPP_H_
@@ -57,14 +53,18 @@ public:
   /**
    * Main constructor. Creates a "slots" number of objects T. Each object is
    * passed the "args" arguments at construction.
-   * @param slots(in): Number of copies to create;
+   * @param slots: Number of copies to create;
    *        equal to the maximum number of concurrent readers and  writers + 1
-   * @param args(in): Optional inputs to pass to the object's constructor
+   * @param args: Optional inputs to pass to the object's constructor
+   * @note: Objects' constructor are called in succession. Passed arguments 
+   *        need to be constant so every object is constructed in the same way.
+   *        If this is not exceptable for a specific object, objects can be created 
+   *        by the user, whith their pointers being passed to the CABpp constructor.
    * @exceptions - Can throw any exception thrown by the T object's constructor 
    *               or by allocating memory via new.
    */
   template<typename... Args>
-  CABpp (unsigned int slots, Args&&... args) : 
+  CABpp (unsigned int slots, const Args&... args) : 
   ptr_flags_(slots, kFree), handler_type_(OperationType::kFull) {
     if (!slots) { //Empty cab <=> nullptr
       read_sp_ = nullptr;
@@ -75,7 +75,7 @@ public:
     for (int i=0; i<slots; ++i) {
       try {
         //Allocate and construct object
-        ptrs_.push_back(new T(std::forward<Args>(args)...));
+        ptrs_.push_back(new T(args...));
       } catch(...) {
         //Free all allocated objects and throw
         for (auto& ptr : ptrs_)
@@ -92,20 +92,24 @@ public:
    * Main constructor using user-allocated memory. Creates a "slots" number of 
    * objects T in the passed allocated memory. Each object is passed the "args" 
    * arguments at construction.
-   * @param ptr(in): Pointer to the user-allocated memory
+   * @param ptr: Pointer to the user-allocated memory
    * @param mem_size(in/out): Size of the allocated memory. Value is decreased 
    *        by the memory size used for the CAB objects.
-   * @param slots(in): Number of copies to create;
+   * @param slots: Number of copies to create;
    *        equal to the maximum number of concurrent readers and  writers + 1
-   * @param args(in): Optional inputs to pass to the object's constructors
+   * @param args: Optional inputs to pass to the object's constructors
+   * @note: Objects' constructor are called in succession. Passed arguments 
+   *        need to be constant so every object is constructed in the same way.
+   *        If this is not exceptable for a specific object, objects can be created 
+   *        by the user, whith their pointers being passed to the CABpp constructor.
    * @note: CAB will default to nullptr in case the allocated memory was not
-   *        sufficiently large (no exceptions thrown). 
+   *        sufficiently large (no exceptions thrown in that case). 
    *        Check: cab.Read() != nullptr
    * @exceptions - Can throw any exception thrown by the T object's constructor 
    *               or by allocating memory via new.
    */
   template<typename... Args>
-  CABpp(void* ptr, size_t& mem_size, unsigned int slots, Args&&... args) : 
+  CABpp(void* ptr, size_t& mem_size, unsigned int slots, const Args&... args) : 
   ptr_flags_(slots, kFree), handler_type_(OperationType::kNoMem) {
     if (!slots) { //Empty cab <=> nullptr
       read_sp_ = nullptr;
@@ -119,7 +123,7 @@ public:
         T* aligned = reinterpret_cast<T*>(ptr);
         //Create new object at the aligned memory
         try {
-          ptrs_.push_back(new(aligned) T(std::forward<Args>(args)...));
+          ptrs_.push_back(new(aligned) T(args...));
         } catch(...) {
           //Free all allocated objects and throw
           for (auto& ptr : ptrs_)
@@ -144,7 +148,7 @@ public:
   /**
    * Main constructor using user-constructed objects. Runs only the logic level. 
    * The objects and memory allocation are handled by the user.
-   * @param obj_ptrs(in): vector of pointers to the user-constructed objects
+   * @param obj_ptrs: vector of pointers to the user-constructed objects
    */
   CABpp(std::vector<T*> obj_ptrs) : handler_type_(OperationType::kNoObj) {
     if (obj_ptrs.empty()) {
@@ -303,7 +307,7 @@ public:
   
   /**
    * Write function. Copies the input to the first free slot. 
-   * @param in(in): object T to copy over
+   * @param in: object T to copy over
    * @note: Uses operator= to assign the value to the free object.
    * @return bool; false if a free pointer was not found
    */
@@ -316,7 +320,7 @@ public:
   
   /**
    * Write function. Executes move semantic on the first free slot.
-   * @param in(in): object T to move
+   * @param in: object T to move
    * @return bool; false if a free pointer was not found
    */
   bool Write(T&& in) {
@@ -341,8 +345,8 @@ private:
   /**
    * Custom shared pointer delete function. Frees the appropriate pointer by
    * setting the corresponding flag to "writable".
-   * @param elem(in): object's raw pointer
-   * @param idx(in): index corresponding to the pointer's index in the vector
+   * @param elem: object's raw pointer
+   * @param idx: index corresponding to the pointer's index in the vector
    * @note: Will fail during the move constructor.
    */
   void DeleteSP(T* elem, int idx) {
@@ -356,8 +360,8 @@ private:
   /**
    * Helper function that creates a shared pointer from the object's raw 
    * pointer.
-   * @param ptr(in): raw object pointer to make into a shared pointer
-   * @param idx(in): pointer's index in the vector @ref ptrs_
+   * @param ptr: raw object pointer to make into a shared pointer
+   * @param idx: pointer's index in the vector @ref ptrs_
    * @return shared pointer of the class' template object
    */
   std::shared_ptr<const T> CreateSharedPtr(T* ptr, int idx) {
@@ -373,7 +377,7 @@ private:
    * Helper function that finds the first "writable" slot, saves it and switches its
    * status to "readable".
    * @return int; index of the pointer 
-   * @note: equal to the vector's size of error
+   * @note: equal to the vector's size on error
    */
   int GetFreePtrIdx(void) {
     //Find a pointer that is available for writing
@@ -435,9 +439,7 @@ private:
   };
 
   /**
-   * CAB operation type enumeration. Defines 3 types of object handling.
-   * The CAB can allocate and construct all object; construct objects on 
-   * user-allocated memory; or use user-constructed objects (leaving just the logic level running).
+   * CAB operation type enumeration.
    */
   enum class OperationType {
     kFull = 0, //!< Handle both memory allocation and object construction
