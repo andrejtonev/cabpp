@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 
-project(cabpp VERSION 1.2.0)
+project(cabpp VERSION 1.2.1)
 
 find_package (Threads)
 

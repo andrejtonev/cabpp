@@ -4,20 +4,14 @@
  * @brief C++ header-only library implementing a Circular Asynchronous Buffer
  *
  * Cyclic Asynchronous Buffer (CAB) is a communication mechanism used between
- * periodic tasks, first proposed by Prof. D. Clark in 1989 (refered to as 
- * Periodic Data Buffer), later redefined by Prof. G. Buttazzo.
- * 
+ * periodic tasks.
  * CAB architecture implements a block-free buffer, where reading from it 
  * returns the last value written to it and writing to it never blocks.
+ *
  * CAB allocates n_reader + n_writer + 1 slots. This way, when the 
  * user tries to write to CAB, there will always be at least one free slot. 
  * When reading, CAB simply uses the last slot used for a completed write 
  * operation.
- * 
- * The non-blocking aspect of the CAB's architecture can be useful in itself,
- * but can also lead to a significant increase in performance.
- * This performance is not necessarily seen in all cases. The cases where the 
- * reading or writing operations are slow can benefit greatly.
  * 
  * NOTE: While this implementation is lock-free it is not wait-free since there
  * are atomic operations that may use spin-locks in their implementations.
@@ -40,7 +34,7 @@
 namespace cabpp {
 /**********************************Constants***********************************/
 constexpr bool kBusy = 1;
-constexpr bool kFree = 0;
+constexpr bool kFree = !kBusy;
 
 /*****************************Forward declarations*****************************/
 template<typename T>
@@ -54,12 +48,12 @@ public:
    * Main constructor. Creates a "slots" number of objects T. Each object is
    * passed the "args" arguments at construction.
    * @param slots: Number of copies to create;
-   *        equal to the maximum number of concurrent readers and  writers + 1
+   *        equal to the maximum number of concurrent readers and writers + 1
    * @param args: Optional inputs to pass to the object's constructor
    * @note: Objects' constructor are called in succession. Passed arguments 
    *        need to be constant so every object is constructed in the same way.
-   *        If this is not exceptable for a specific object, objects can be created 
-   *        by the user, whith their pointers being passed to the CABpp constructor.
+   *        If this is not acceptable for a specific object, objects can be created 
+   *        by the user, with their pointers being passed to the CABpp constructor.
    * @exceptions - Can throw any exception thrown by the T object's constructor 
    *               or by allocating memory via new.
    */
@@ -100,7 +94,7 @@ public:
    * @param args: Optional inputs to pass to the object's constructors
    * @note: Objects' constructor are called in succession. Passed arguments 
    *        need to be constant so every object is constructed in the same way.
-   *        If this is not exceptable for a specific object, objects can be created 
+   *        If this is not acceptable for a specific object, objects can be created 
    *        by the user, whith their pointers being passed to the CABpp constructor.
    * @note: CAB will default to nullptr in case the allocated memory was not
    *        sufficiently large (no exceptions thrown in that case). 
@@ -152,10 +146,11 @@ public:
    */
   CABpp(const std::vector<T*>& obj_ptrs) : 
   ptrs_(obj_ptrs), handler_type_(OperationType::kNoObj) {
-    if (ptrs_.empty()) {
+    if (ptrs_.empty()) { //Empty cab <=> nullptr
       read_sp_ = nullptr;
       return;
     }
+    //Update pointer
     ptr_flags_ = std::vector<Flag>(ptrs_.size(), kFree);
     ptr_flags_.front() = kBusy;
     read_sp_ = CreateSharedPtr(ptrs_.front(), 0);
@@ -260,7 +255,7 @@ public:
    * Copies the input to the first free slot (sets it to reading mode).
    * @param in: object T to copy over
    * @note: Uses operator= to assign the value to the free object.
-   * @return bool; false if a free pointer was not found
+   * @return bool; false if a free slot was not found
    */
   bool Write(const T& in) {
     auto ptr = Reserve();
@@ -272,7 +267,7 @@ public:
   /**
    * Executes move semantic on the first free slot (sets it to reading mode).
    * @param in: object T to move
-   * @return bool; false if a free pointer was not found
+   * @return bool; false if a free slot was not found
    */
   bool Write(T&& in) {
     auto ptr = Reserve();
@@ -324,8 +319,8 @@ private:
   }
   
   /**
-   * Helper function that finds the first "writable" slot, saves it and switches its
-   * status to "readable".
+   * Helper function that finds the first "free" slot, saves it and switches its
+   * status to "busy".
    * @return int; index of the pointer 
    * @note: equal to the vector's size on error
    */
@@ -333,8 +328,8 @@ private:
     //Find a pointer that is available for writing
     int idx = 0;
     for (auto& ptr_flag : ptr_flags_) {
-      bool write_b = kFree;
-      if (ptr_flag.flag.compare_exchange_strong(write_b, kBusy)) {
+      bool free_b = kFree;
+      if (ptr_flag.flag.compare_exchange_strong(free_b, kBusy)) {
         break;
       }
       ++idx;
