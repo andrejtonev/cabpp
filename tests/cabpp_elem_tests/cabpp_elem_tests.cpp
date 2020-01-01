@@ -23,7 +23,7 @@ TEST(CABpp, Allocate) {
 TEST(CABpp, UserMem) {
   size_t mem_size = 300;
   auto mem_ = malloc(mem_size);
-  void* mem = (char*)mem_ + 1;
+  char* mem = &static_cast<char*>(mem_)[1];
   --mem_size;
   {
     EXPECT_TRUE(mem);
@@ -32,7 +32,7 @@ TEST(CABpp, UserMem) {
     EXPECT_LE(mem_size, size_res);
     EXPECT_EQ(*cabpp_3.Read(), 11);
     size_res = mem_size - 5*sizeof(std::string);
-    cabpp::CABpp<std::string> cabpp_5((char*)mem + (300 - mem_size), mem_size, 5, "22");
+    cabpp::CABpp<std::string> cabpp_5(&mem[300 - mem_size], mem_size, 5, "22");
     EXPECT_LE(mem_size, size_res);
     EXPECT_EQ(*cabpp_5.Read(), "22");
   }
@@ -40,10 +40,10 @@ TEST(CABpp, UserMem) {
   
   //Check for failure
   mem_size = 10;
-  mem = malloc(mem_size);
-  cabpp::CABpp<int> cabpp_fail(mem, mem_size, 11); //11xint will fail on 10B memory
+  void* mem_2 = malloc(mem_size);
+  cabpp::CABpp<int> cabpp_fail(mem_2, mem_size, 11); //11xint will fail on 10B memory
   EXPECT_EQ(cabpp_fail.Read(), nullptr);
-  free(mem);
+  free(mem_2);
 }
 
 /** Test the constructor on user-constructed objects with various data types.
