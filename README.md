@@ -54,15 +54,16 @@ make
 make install
 ```
 
-### Run example
+### Run examples
 ```
 git clone https://github.com/andrejtonev/cabpp.git
 cd cabpp
 mkdir build
 cd build
-cmake -DBUILD_EXAMPLE=ON ..
+cmake -DOPENCV_EXAMPLE=ON -DMUTEX_EXAMPLE=ON ..
 make
-./cabpp-1.0.0
+./examples/mutex_example/mutex_example-cabpp
+./examples/opencv_example/opencv_example-cabpp
 ```
 
 ### Run tests

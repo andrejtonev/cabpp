@@ -40,14 +40,7 @@ install(FILES "${PROJECT_BINARY_DIR}/CABppConfigVersion.cmake"
         DESTINATION lib/cmake/${PROJECT_NAME})
 install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/ DESTINATION include)
 
-option(BUILD_EXAMPLE "Compile the example application" OFF)
-if (BUILD_EXAMPLE)
-  add_executable(${PROJECT_NAME}-${PROJECT_VERSION} main.cpp)
-  target_include_directories(${PROJECT_NAME}-${PROJECT_VERSION} PRIVATE include)
-  target_link_libraries(${PROJECT_NAME}-${PROJECT_VERSION} ${CMAKE_THREAD_LIBS_INIT}
-                                                           cabpp)
-  install(TARGETS ${PROJECT_NAME}-${PROJECT_VERSION} RUNTIME DESTINATION bin)
-endif()
+add_subdirectory(examples)
 
 option(GTEST "Compile library gtests" OFF)
 if (GTEST)

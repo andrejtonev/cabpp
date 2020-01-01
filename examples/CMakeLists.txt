@@ -1,0 +1,8 @@
+option(MUTEX_EXAMPLE "Compile the mutex (simpler) example application" OFF)
+if (MUTEX_EXAMPLE)
+  add_subdirectory(mutex_example)
+endif()
+option(OPENCV_EXAMPLE "Compile the OpenCV example application" OFF)
+if (OPENCV_EXAMPLE)
+  add_subdirectory(opencv_example)
+endif()
