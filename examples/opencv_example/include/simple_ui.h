@@ -12,7 +12,8 @@
 #include <thread>
 
 namespace ui {
-const std::string kEraseInLine = "\033[0K";  //!< Command to erase the line after current cursor position
+const std::string kEraseInLine =
+    "\033[0K";  //!< Command to erase the line after current cursor position
 
 /**
  * Clear screen using an escape sequence.

@@ -16,13 +16,12 @@
 #include "simple_ui.h"
 #include "video_func.h"
 
-
 int main(int argc, char** argv) {
   constexpr int kHeight = 800;   //!< Generated frame height
   constexpr int kWidth = 1500;   //!< Generated frame width
   constexpr int kBGColor = 200;  //!< Background color
 
-  std::atomic_bool use_cab(false);      //!< Flag enabling/disabling CAB
+  std::atomic_bool use_cab(false);     //!< Flag enabling/disabling CAB
   std::atomic_bool run(false);         //!< Flag enabling/disabling example
   std::atomic_bool main_ready(false);  //!< True once the first img is generated
 
