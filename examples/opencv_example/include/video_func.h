@@ -108,7 +108,7 @@ void generate_frames(std::atomic_bool& use_cab,
                      uint16_t& step_ms,
                      std::atomic_bool& run,
                      std::atomic_bool* main_ready) {
-  Fps fps("MAIN", 10);
+  Fps fps("GEN ", 10);
   uint64_t fn_ = 1;
   cv::Point2f rec_points_[4];
   cv::Scalar bg_color(200.0);
@@ -196,7 +196,7 @@ void draw_frames(std::atomic_bool& use_cab,
                  const std::string& win_name,
                  std::atomic_bool& run,
                  std::atomic_bool& main_ready) {
-  Fps fps("GEN ", 11);
+  Fps fps("DRAW", 11);
   uint64_t fn_prev = 0;
   // spin-lock - wait for the frame generation thread
   while (!main_ready)

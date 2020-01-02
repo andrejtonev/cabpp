@@ -8,6 +8,9 @@
  *
  * Two inter-communication types are used: CAB, a simple mutex blocking a
  * global Mat variable used later by the two threads.
+ * Using the CAB, there are no run-time allocations; therefor depending on 
+ * the penalty of allocating a new frame each time it is generated, the 
+ * benefits can be greater or smaller. Larger the image, greater the benefits.
  *
  * @author Andreja Tonev
  *
@@ -21,7 +24,7 @@ int main(int argc, char** argv) {
   constexpr int kWidth = 1500;   //!< Generated frame width
   constexpr int kBGColor = 200;  //!< Background color
 
-  std::atomic_bool use_cab(false);     //!< Flag enabling/disabling CAB
+  std::atomic_bool use_cab(true);     //!< Flag enabling/disabling CAB
   std::atomic_bool run(false);         //!< Flag enabling/disabling example
   std::atomic_bool main_ready(false);  //!< True once the first img is generated
 
