@@ -23,7 +23,7 @@ jobs:
       run: cmake -E make_directory ${{github.workspace}}/build
 
     - name: Install env
-      run: apt-get install libgtest-dev
+      run: sudo apt-get install libgtest-dev
 
     - name: Configure CMake
       # Use a bash shell so we can use the same syntax for environment variable
